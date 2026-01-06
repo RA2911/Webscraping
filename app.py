@@ -13,6 +13,10 @@ from openai import OpenAI
 
 app = Flask(__name__)
 
+# HARD DISABLE PROXIES (Render / httpx fix)
+for k in ["HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "http_proxy", "https_proxy", "all_proxy"]:
+    os.environ.pop(k, None)
+
 STATE: Dict[str, Any] = {
     "status": "idle",   # idle|running|done|error
     "step": "",
