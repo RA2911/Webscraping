@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Web Scraper</title>
+</head>
+<body>
+  <h1>Web Scraping App</h1>
+
+  <form method="post">
+    <input type="text" name="url" placeholder="Paste URL here" style="width:400px" required>
+    <button type="submit">Scrape</button>
+  </form>
+
+  {% if text %}
+    <pre style="white-space:pre-wrap">{{ text }}</pre>
+  {% endif %}
+</body>
+</html>
