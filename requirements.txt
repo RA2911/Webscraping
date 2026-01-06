@@ -1,4 +1,7 @@
 Flask
 requests
 beautifulsoup4
+lxml
+trafilatura
+readability-lxml
 gunicorn
