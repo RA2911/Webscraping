@@ -1,18 +1,52 @@
-<!DOCTYPE html>
-<html>
+<!doctype html>
+<html lang="en">
 <head>
-  <title>Web Scraper</title>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Multi-URL Clean Scraper</title>
+  <style>
+    body{font-family:Arial, sans-serif; margin:24px; max-width:1100px}
+    textarea{width:100%; height:180px; font-family:Consolas, monospace; padding:10px}
+    button{padding:10px 14px; cursor:pointer; margin-right:10px}
+    .card{border:1px solid #ddd; border-radius:10px; padding:12px; margin-top:12px}
+    .ok{color:green; font-weight:700}
+    .bad{color:#b00020; font-weight:700}
+    pre{white-space:pre-wrap; word-wrap:break-word; background:#fafafa; padding:10px; border-radius:8px}
+    .row{display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin-top:10px}
+  </style>
 </head>
 <body>
-  <h1>Web Scraping App</h1>
+  <h1>Multi-URL Clean Scraper</h1>
+  <p>Paste multiple URLs (one per line). Then scrape preview, or download one combined TXT.</p>
 
-  <form method="post">
-    <input type="text" name="url" placeholder="Paste URL here" style="width:400px" required>
-    <button type="submit">Scrape</button>
+  <form method="post" action="/scrape">
+    <label><strong>URLs</strong></label>
+    <textarea name="urls" placeholder="https://example.com/page1
+https://example.com/page2">{{ urls_text }}</textarea>
+
+    <div class="row">
+      <button type="submit">Scrape Preview</button>
+    </div>
   </form>
 
-  {% if text %}
-    <pre style="white-space:pre-wrap">{{ text }}</pre>
+  <form method="post" action="/download" style="margin-top:10px">
+    <input type="hidden" name="urls" value="{{ urls_text }}">
+    <button type="submit">Download TXT (All Combined)</button>
+  </form>
+
+  {% if results %}
+    <h2>Preview</h2>
+    {% for r in results %}
+      <div class="card">
+        <div><strong>{{ r.url }}</strong></div>
+        {% if r.ok %}
+          <div class="ok">OK (preview)</div>
+        {% else %}
+          <div class="bad">ERROR</div>
+        {% endif %}
+        <pre>{{ r.text }}</pre>
+      </div>
+    {% endfor %}
   {% endif %}
 </body>
 </html>
