@@ -4,6 +4,15 @@ import re
 from typing import List
 
 from openai import OpenAI
+client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+
+resp = client.responses.create(
+    model=os.getenv("OPENAI_MODEL", "gpt-4.1-mini"),
+    input="Say OK"
+)
+
+text = resp.output_text if isinstance(resp.output_text, str) else resp.output_text()
+print(text)
 
 
 def _extract_urls(text: str) -> List[str]:
