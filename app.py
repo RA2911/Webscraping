@@ -7,6 +7,7 @@ from scraper import is_valid_url, scrape_clean_text
 
 app = Flask(__name__)
 
+
 def build_combined_txt(urls: list[str]) -> str:
     out = []
     out.append(f"Scraped on (UTC): {datetime.utcnow().isoformat()}Z")
@@ -21,13 +22,15 @@ def build_combined_txt(urls: list[str]) -> str:
             out.append(text)
         except Exception as e:
             out.append(f"ERROR: {e}")
-        out.append("")  # spacing
+        out.append("")
 
     return "\n".join(out).strip() + "\n"
+
 
 @app.get("/")
 def home():
     return render_template("index.html", results=None, urls_text="")
+
 
 @app.post("/scrape")
 def scrape():
@@ -39,11 +42,13 @@ def scrape():
     for url in urls:
         try:
             text = scrape_clean_text(url)
-            results.append({"url": url, "ok": True, "text": text[:2000] + ("\n...\n(TRUNCATED PREVIEW)" if len(text) > 2000 else "")})
+            preview = text[:2000] + ("\n...\n(TRUNCATED PREVIEW)" if len(text) > 2000 else "")
+            results.append({"url": url, "ok": True, "text": preview})
         except Exception as e:
             results.append({"url": url, "ok": False, "text": str(e)})
 
     return render_template("index.html", results=results, urls_text=urls_text)
+
 
 @app.post("/download")
 def download():
@@ -55,8 +60,14 @@ def download():
     mem = io.BytesIO(combined.encode("utf-8"))
     mem.seek(0)
 
-    filename = "scraped_content.txt"
-    return send_file(mem, as_attachment=True, download_name=filename, mimetype="text/plain")
+    return send_file(
+        mem,
+        as_attachment=True,
+        download_name="scraped_content.txt",
+        mimetype="text/plain",
+    )
+
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=True)
+
