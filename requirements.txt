@@ -9,3 +9,5 @@ readability-lxml==0.8.1
 vaderSentiment==3.3.2
 scikit-learn==1.5.1
 numpy==2.0.1
+httpx==0.27.2
+
