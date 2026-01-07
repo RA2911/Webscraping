@@ -4,21 +4,10 @@ import re
 from typing import List
 
 from openai import OpenAI
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-
-resp = client.responses.create(
-    model=os.getenv("OPENAI_MODEL", "gpt-4.1-mini"),
-    input="Say OK"
-)
-
-text = resp.output_text if isinstance(resp.output_text, str) else resp.output_text()
-print(text)
 
 
 def _extract_urls(text: str) -> List[str]:
-    # fallback if model returns text with URLs
     urls = re.findall(r"https?://[^\s\]\)\"'>]+", text or "")
-    # de-dup preserve order
     out = []
     seen = set()
     for u in urls:
@@ -31,18 +20,18 @@ def _extract_urls(text: str) -> List[str]:
 
 def discover_comment_links(company: str, max_links: int = 12, hints: str = "") -> List[str]:
     """
-    Uses OpenAI Responses API + web_search tool to return a clean list of URLs
-    likely containing comments/reviews/feedback about the company.
+    Returns a list of URLs that likely contain comments/reviews/feedback about the company.
+    NOTE: With openai==1.51.2, we use chat.completions (no client.responses / no web_search tool).
     """
     api_key = os.getenv("OPENAI_API_KEY")
     if not api_key:
         raise RuntimeError("OPENAI_API_KEY is not set in environment variables.")
 
-    model = os.getenv("OPENAI_MODEL", "gpt-5.2")
-    client = OpenAI()
+    model = os.getenv("OPENAI_MODEL", "gpt-4.1-mini")
+    client = OpenAI(api_key=api_key)
 
     prompt = f"""
-You are an analyst. Find public webpages that contain COMMENTS / REVIEWS / FEEDBACK / DISCUSSIONS about the company.
+You are an analyst. Suggest public webpages that likely contain COMMENTS / REVIEWS / FEEDBACK / DISCUSSIONS about the company.
 
 Company: {company}
 Hints (optional): {hints}
@@ -53,30 +42,31 @@ Rules:
     "urls": ["https://...", "..."]
   }}
 - Provide between 6 and {max_links} URLs.
-- Prefer sources that usually contain user commentary: forums, Reddit threads, review pages, complaint boards, community discussions, news comment pages, social posts that are publicly accessible.
+- Prefer sources that usually contain user commentary: forums, Reddit threads, review pages, complaint boards, community discussions, news comment pages.
 - Avoid login-only pages and avoid homepages (prefer deep links with text).
 """
 
-    # Enable web search tool. :contentReference[oaicite:2]{index=2}
-    resp = client.responses.create(
+    resp = client.chat.completions.create(
         model=model,
-        input=prompt,
-        tools=[{"type": "web_search"}],
+        messages=[
+            {"role": "user", "content": prompt}
+        ],
+        temperature=0.2,
     )
 
-    out_text = getattr(resp, "output_text", None)
-    if callable(out_text):
-        text = resp.output_text()
-    else:
-        # fallback: SDK sometimes stores on property
-        text = getattr(resp, "output_text", "") or ""
+    text = (resp.choices[0].message.content or "").strip()
 
     # Try JSON parse first
     try:
         data = json.loads(text)
         urls = data.get("urls", [])
         if isinstance(urls, list) and urls:
-            return [str(u).strip() for u in urls if str(u).strip().startswith("http")]
+            cleaned = []
+            for u in urls:
+                u = str(u).strip()
+                if u.startswith("http"):
+                    cleaned.append(u)
+            return cleaned[:max_links]
     except Exception:
         pass
 
