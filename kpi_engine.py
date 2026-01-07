@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-import math
-from dataclasses import dataclass
+import re
 from typing import Dict, List, Tuple
 
 import numpy as np
@@ -11,20 +10,20 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 
 analyzer = SentimentIntensityAnalyzer()
 
+_STOP = {
+    "the","and","for","with","that","this","from","are","was","were","have","has","had","will",
+    "you","your","they","their","them","our","but","not","can","could","should","would","about",
+    "into","over","under","more","most","very","than","then","when","what","which","who","why",
+}
+
 
 def split_into_sentences(text: str) -> List[str]:
-    # simple splitter (fast + robust enough)
     text = (text or "").replace("\n", " ")
     parts = [p.strip() for p in text.split(".") if p.strip()]
     return parts
 
 
 def compute_sentiment_kpis(text: str) -> Dict:
-    """
-    Returns:
-      - sentence-level scores
-      - aggregate KPIs
-    """
     sents = split_into_sentences(text)
     if not sents:
         return {
@@ -40,12 +39,11 @@ def compute_sentiment_kpis(text: str) -> Dict:
     pos = neg = neu = 0
     intensity_acc = 0.0
 
-    for s in sents[:2000]:  # safety cap
+    for s in sents[:2000]:
         sc = analyzer.polarity_scores(s)
         compound = sc["compound"]
         scores.append({"text": s, "compound": compound, "pos": sc["pos"], "neg": sc["neg"], "neu": sc["neu"]})
 
-        # simple label thresholds
         if compound >= 0.05:
             pos += 1
         elif compound <= -0.05:
@@ -73,9 +71,6 @@ def compute_sentiment_kpis(text: str) -> Dict:
 
 
 def top_topics_keywords(texts: List[str], top_k: int = 12) -> List[Tuple[str, float]]:
-    """
-    Lightweight topic proxy: TF-IDF top terms across corpus.
-    """
     corpus = [t for t in texts if t and len(t) > 50]
     if len(corpus) < 1:
         return []
@@ -87,7 +82,6 @@ def top_topics_keywords(texts: List[str], top_k: int = 12) -> List[Tuple[str, fl
         min_df=1
     )
     X = vec.fit_transform(corpus)
-    # sum tfidf across docs
     scores = np.asarray(X.sum(axis=0)).ravel()
     terms = vec.get_feature_names_out()
     pairs = list(zip(terms, scores))
@@ -95,18 +89,24 @@ def top_topics_keywords(texts: List[str], top_k: int = 12) -> List[Tuple[str, fl
     return [(t, float(s)) for t, s in pairs[:top_k]]
 
 
-def overall_sentiment_rate(avg_compound: float, positivity_ratio: float, negativity_rate: float, intensity_index: float) -> float:
-    """
-    Composite score in [0..100] derived from other KPIs.
-    """
-    # normalize compound [-1..1] => [0..1]
-    c = (avg_compound + 1.0) / 2.0
-    # penalize negativity and high intensity when negative dominates
-    neg_penalty = negativity_rate
-    # intensity affects risk; we dampen impact by making it bounded
-    intensity = min(1.0, max(0.0, intensity_index))  # approx [0..1]
+def most_cited_words(text: str, top_k: int = 20, min_len: int = 5) -> List[Dict]:
+    t = (text or "").lower()
+    t = re.sub(r"[^a-z0-9\s]+", " ", t)
+    words = [w for w in t.split() if len(w) >= min_len and w not in _STOP and not w.isdigit()]
+    if not words:
+        return []
+    freq: Dict[str, int] = {}
+    for w in words:
+        freq[w] = freq.get(w, 0) + 1
+    items = sorted(freq.items(), key=lambda x: x[1], reverse=True)[:top_k]
+    return [{"word": w, "count": int(c)} for w, c in items]
 
-    # weights (tunable)
+
+def overall_sentiment_rate(avg_compound: float, positivity_ratio: float, negativity_rate: float, intensity_index: float) -> float:
+    c = (avg_compound + 1.0) / 2.0
+    neg_penalty = negativity_rate
+    intensity = min(1.0, max(0.0, intensity_index))
+
     score01 = (
         0.45 * c +
         0.30 * positivity_ratio +
@@ -117,11 +117,12 @@ def overall_sentiment_rate(avg_compound: float, positivity_ratio: float, negativ
     return round(score01 * 100.0, 2)
 
 
-def build_dashboard_payload(company: str, corpus_texts: List[str]) -> Dict:
+def build_dashboard_payload(company: str, corpus_texts: List[str], blocked_meta: List[Dict]) -> Dict:
     merged = "\n\n".join(corpus_texts)
 
     sk = compute_sentiment_kpis(merged)
     topics = top_topics_keywords(corpus_texts, top_k=12)
+    words = most_cited_words(merged, top_k=20, min_len=5)
 
     rate = overall_sentiment_rate(
         avg_compound=sk["avg_compound"],
@@ -130,35 +131,55 @@ def build_dashboard_payload(company: str, corpus_texts: List[str]) -> Dict:
         intensity_index=sk["intensity_index"]
     )
 
-    # evidence snippets
     sents = sk["sentences"]
     most_neg = sorted(sents, key=lambda x: x["compound"])[:5]
     most_pos = sorted(sents, key=lambda x: x["compound"], reverse=True)[:5]
 
-    # 7 master KPI cards + sub KPIs
+    # Short interpretations (shown in modal)
+    interpretations = {
+        "avg_compound": "Average sentiment tone (-1 very negative to +1 very positive).",
+        "overall_sentiment_rate": "Composite score (0–100). Higher = healthier public sentiment.",
+        "positivity_ratio": "Share of positive sentences (>= +0.05).",
+        "negativity_rate": "Share of negative sentences (<= -0.05).",
+        "neutrality_rate": "Share of neutral sentences.",
+        "intensity_index": "Average emotional strength (higher = stronger emotions, risk if negative).",
+    }
+
     masters = {
         "Core Sentiment": {
             "avg_compound": sk["avg_compound"],
             "overall_sentiment_rate": rate,
+            "_help": {
+                "avg_compound": interpretations["avg_compound"],
+                "overall_sentiment_rate": interpretations["overall_sentiment_rate"],
+            }
         },
         "Positivity": {
             "positivity_ratio": round(sk["positivity_ratio"] * 100, 2),
+            "_help": {"positivity_ratio": interpretations["positivity_ratio"]}
         },
         "Negativity": {
             "negativity_rate": round(sk["negativity_rate"] * 100, 2),
+            "_help": {"negativity_rate": interpretations["negativity_rate"]}
         },
         "Intensity & Risk": {
             "intensity_index": round(sk["intensity_index"], 4),
+            "_help": {"intensity_index": interpretations["intensity_index"]}
         },
         "Topics & Aspects": {
             "top_topics": [{"term": t, "score": s} for t, s in topics],
         },
+        "Most Cited Words": {
+            "top_words": words
+        },
         "Volume & Coverage": {
-            "sources_count": len(corpus_texts),
+            "sources_ok": len(corpus_texts),
+            "sources_blocked": len([m for m in blocked_meta if m.get("blocked")]),
+            "blocked_list": blocked_meta[:30],
             "sentences_scanned": len(sk["sentences"]),
         },
         "Predictive Analysis": {
-            "status": "ready"  # computed via ChatGPT on-demand
+            "status": "ready"
         }
     }
 
