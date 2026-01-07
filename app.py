@@ -3,7 +3,7 @@ import json
 from flask import Flask, request, jsonify
 
 from discovery import discover_comment_links
-from scraper import fetch_and_extract
+from scraper import scrape_many, build_combined_txt, ScrapeItem
 from kpi_engine import build_dashboard_payload
 
 from openai import OpenAI
