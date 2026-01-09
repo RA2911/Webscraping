@@ -40,17 +40,25 @@ def api_analyze():
     else:
         urls = [str(u).strip() for u in selected_urls if str(u).strip().startswith("http")]
 
+    # Use scrape_many to scrape all URLs at once
+    scraped_items = scrape_many(urls, max_pages=len(urls))
+    
     corpus = []
     blocked_meta = []
     used = []
 
-    for url in urls:
-        text, meta = fetch_and_extract(url)
-        if meta.get("blocked") or not text:
-            blocked_meta.append(meta)
+    for item in scraped_items:
+        if not item.ok:
+            # This is a blocked/error case
+            blocked_meta.append({
+                "url": item.url,
+                "blocked": True,
+                "reason": item.text  # The error message
+            })
             continue
-        corpus.append(text)
-        used.append(url)
+        # Successfully scraped
+        corpus.append(item.text)
+        used.append(item.url)
 
     payload = build_dashboard_payload(company=company, corpus_texts=corpus, blocked_meta=blocked_meta)
     payload["used_urls"] = used
@@ -124,3 +132,7 @@ Rules:
         return jsonify({"actions": actions[:5]})
     except Exception:
         return jsonify({"actions": [], "error": "Predictive parsing failed", "raw": text}), 200
+
+
+if __name__ == "__main__":
+    app.run(debug=True, host="0.0.0.0", port=5000)
